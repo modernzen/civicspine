@@ -1,0 +1,76 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-navy-950 text-slate-200 font-sans;
+  }
+
+  ::selection {
+    @apply bg-navy-500/40;
+  }
+
+  ::-webkit-scrollbar {
+    @apply w-1.5;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-navy-900;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-navy-700 rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-navy-600;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-navy-900/60 border border-navy-800/50 rounded-xl backdrop-blur-sm;
+  }
+
+  .card-hover {
+    @apply card transition-all duration-200 hover:border-navy-700/60 hover:bg-navy-900/80;
+  }
+
+  .input-field {
+    @apply w-full px-4 py-3 bg-navy-900/80 border border-navy-700/50 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-none focus:border-navy-500 focus:ring-1 focus:ring-navy-500/50 transition-colors;
+  }
+
+  .btn-primary {
+    @apply px-5 py-2.5 bg-navy-600 hover:bg-navy-500 text-white font-medium rounded-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-navy-400/50;
+  }
+
+  .btn-secondary {
+    @apply px-5 py-2.5 bg-navy-800/60 hover:bg-navy-700/60 text-slate-300 font-medium rounded-lg border border-navy-700/50 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-navy-600/50;
+  }
+
+  .btn-danger {
+    @apply px-5 py-2.5 bg-accent-700/20 hover:bg-accent-700/30 text-accent-400 font-medium rounded-lg border border-accent-700/30 transition-all duration-200;
+  }
+
+  .badge-success {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-full bg-success-500/10 text-success-400 border border-success-500/20;
+  }
+
+  .badge-warning {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-full bg-warning-500/10 text-warning-400 border border-warning-500/20;
+  }
+
+  .badge-danger {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-full bg-accent-500/10 text-accent-400 border border-accent-500/20;
+  }
+
+  .badge-neutral {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-full bg-navy-700/40 text-slate-400 border border-navy-700/50;
+  }
+}
