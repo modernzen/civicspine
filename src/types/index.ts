@@ -82,6 +82,19 @@ export interface Donation {
   created_at: string;
 }
 
+export interface Notification {
+  id: string;
+  organization_id: string;
+  user_id: string | null;
+  type: 'deadline_approaching' | 'deadline_overdue' | 'coi_unsigned' | 'ack_pending' | 'grant_report_due';
+  title: string;
+  message: string;
+  entity_type: string;
+  entity_id: string | null;
+  read: boolean;
+  created_at: string;
+}
+
 export interface AuditLogEntry {
   id: string;
   organization_id: string;

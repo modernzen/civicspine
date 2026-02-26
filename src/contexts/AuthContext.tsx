@@ -14,6 +14,7 @@ interface AuthState {
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   completeSetup: (fullName: string, orgName: string) => Promise<{ error: string | null }>;
+  refreshProfile: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState | undefined>(undefined);
@@ -148,6 +149,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: null };
   }
 
+  async function refreshProfile() {
+    if (user) {
+      await fetchProfileAndOrg(user.id);
+    }
+  }
+
   async function signOut() {
     await supabase.auth.signOut();
     setProfile(null);
@@ -156,7 +163,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, session, profile, organization, loading, needsSetup, signUp, signIn, signOut, completeSetup }}>
+    <AuthContext.Provider value={{ user, session, profile, organization, loading, needsSetup, signUp, signIn, signOut, completeSetup, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );

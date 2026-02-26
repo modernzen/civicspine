@@ -11,6 +11,7 @@ import StatesPage from './pages/states/StatesPage';
 import BoardPage from './pages/board/BoardPage';
 import GrantsPage from './pages/grants/GrantsPage';
 import DonorsPage from './pages/donors/DonorsPage';
+import SettingsPage from './pages/settings/SettingsPage';
 
 function LoadingScreen() {
   return (
@@ -49,6 +50,7 @@ function AppRoutes() {
         <Route path="/board" element={<BoardPage />} />
         <Route path="/grants" element={<GrantsPage />} />
         <Route path="/donors" element={<DonorsPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

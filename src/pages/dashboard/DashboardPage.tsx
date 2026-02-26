@@ -5,17 +5,15 @@ import {
   Landmark,
   Heart,
   AlertCircle,
-  AlertTriangle,
-  CheckCircle2,
-  Clock,
   ArrowRight,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useComplianceData } from '../../hooks/useComplianceData';
 import { useAuth } from '../../contexts/AuthContext';
-import { getDeadlineStatus, formatDate, daysUntil, formatCurrency } from '../../lib/utils';
+import { getDeadlineStatus, formatCurrency } from '../../lib/utils';
 import StatusBadge from '../../components/ui/StatusBadge';
 import DeadlineCountdown from '../../components/ui/DeadlineCountdown';
+import ComplianceTimeline from '../../components/dashboard/ComplianceTimeline';
 
 function StatCard({ icon: Icon, label, value, subtext, color }: {
   icon: typeof FileCheck2;
@@ -52,30 +50,6 @@ export default function DashboardPage() {
   const upcomingGrantReports = grants
     .filter(g => g.status !== 'closed' && g.reporting_due_date)
     .sort((a, b) => (a.reporting_due_date ?? '').localeCompare(b.reporting_due_date ?? ''));
-
-  const allDeadlines = [
-    ...tasks.filter(t => t.status !== 'complete' && t.due_date).map(t => ({
-      id: t.id,
-      label: t.title || `${t.type} — ${t.jurisdiction}`,
-      date: t.due_date!,
-      type: 'compliance' as const,
-      link: '/compliance',
-    })),
-    ...states.filter(s => s.renewal_due_date).map(s => ({
-      id: s.id,
-      label: `${s.state} Registration Renewal`,
-      date: s.renewal_due_date!,
-      type: 'state' as const,
-      link: '/states',
-    })),
-    ...grants.filter(g => g.status !== 'closed' && g.reporting_due_date).map(g => ({
-      id: g.id,
-      label: `${g.funder_name} — Report Due`,
-      date: g.reporting_due_date!,
-      type: 'grant' as const,
-      link: '/grants',
-    })),
-  ].sort((a, b) => a.date.localeCompare(b.date)).slice(0, 8);
 
   if (loading) {
     return (
@@ -165,49 +139,13 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid lg:grid-cols-5 gap-6">
-        <div className="lg:col-span-3 card">
-          <div className="px-5 py-4 border-b border-navy-800/40 flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-white">Upcoming Deadlines</h3>
-            <Clock className="w-4 h-4 text-slate-500" />
-          </div>
-          <div className="divide-y divide-navy-800/30">
-            {allDeadlines.length === 0 ? (
-              <div className="px-5 py-10 text-center">
-                <CheckCircle2 className="w-8 h-8 text-success-500/40 mx-auto mb-3" />
-                <p className="text-sm text-slate-500">No upcoming deadlines</p>
-              </div>
-            ) : (
-              allDeadlines.map((d) => {
-                const days = daysUntil(d.date);
-                const status = getDeadlineStatus(d.date);
-                return (
-                  <Link
-                    key={d.id}
-                    to={d.link}
-                    className="flex items-center justify-between px-5 py-3.5 hover:bg-navy-800/20 transition-colors"
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      {status === 'overdue' && <AlertCircle className="w-4 h-4 text-accent-400 shrink-0" />}
-                      {status === 'urgent' && <AlertTriangle className="w-4 h-4 text-warning-400 shrink-0" />}
-                      {status === 'upcoming' && <Clock className="w-4 h-4 text-slate-500 shrink-0" />}
-                      {status === 'ok' && <CheckCircle2 className="w-4 h-4 text-success-500 shrink-0" />}
-                      <div className="min-w-0">
-                        <p className="text-sm text-slate-300 truncate">{d.label}</p>
-                        <p className="text-xs text-slate-500">{formatDate(d.date)}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3 shrink-0">
-                      <StatusBadge
-                        status={status}
-                        label={days !== null ? (days < 0 ? `${Math.abs(days)}d overdue` : `${days}d`) : undefined}
-                      />
-                      <ArrowRight className="w-3.5 h-3.5 text-slate-600" />
-                    </div>
-                  </Link>
-                );
-              })
-            )}
-          </div>
+        <div className="lg:col-span-3">
+          <ComplianceTimeline
+            tasks={tasks}
+            states={states}
+            grants={grants}
+            boardMembers={boardMembers}
+          />
         </div>
 
         <div className="lg:col-span-2 space-y-6">

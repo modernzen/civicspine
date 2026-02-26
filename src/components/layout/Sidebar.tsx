@@ -10,6 +10,7 @@ import {
   LogOut,
   Shield,
   X,
+  Settings,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -86,13 +87,27 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
           ))}
         </nav>
 
-        <div className="px-4 py-4 border-t border-navy-800/40">
+        <div className="px-4 py-4 border-t border-navy-800/40 space-y-1">
           {profile && (
             <div className="px-3 mb-3">
               <p className="text-sm text-slate-300 font-medium truncate">{profile.full_name}</p>
               <p className="text-xs text-slate-500 capitalize">{profile.role}</p>
             </div>
           )}
+          <NavLink
+            to="/settings"
+            onClick={onClose}
+            className={({ isActive }) =>
+              `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 ${
+                isActive
+                  ? 'bg-navy-800/70 text-white border border-navy-700/40'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-navy-900/60'
+              }`
+            }
+          >
+            <Settings className="w-[18px] h-[18px]" />
+            Settings
+          </NavLink>
           <button
             onClick={signOut}
             className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-500 hover:text-slate-300 hover:bg-navy-900/60 transition-all w-full"
