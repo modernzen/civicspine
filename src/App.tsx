@@ -1,9 +1,10 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import AppLayout from './components/layout/AppLayout';
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/auth/LoginPage';
 import RegisterPage from './pages/auth/RegisterPage';
+import SetupPage from './pages/auth/SetupPage';
 import DashboardPage from './pages/dashboard/DashboardPage';
 import CompliancePage from './pages/compliance/CompliancePage';
 import StatesPage from './pages/states/StatesPage';
@@ -11,29 +12,26 @@ import BoardPage from './pages/board/BoardPage';
 import GrantsPage from './pages/grants/GrantsPage';
 import DonorsPage from './pages/donors/DonorsPage';
 
+function LoadingScreen() {
+  return (
+    <div className="min-h-screen bg-navy-950 flex items-center justify-center">
+      <div className="w-8 h-8 border-2 border-navy-600 border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+}
+
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-navy-950 flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-navy-600 border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
+  const { user, loading, needsSetup } = useAuth();
+  if (loading) return <LoadingScreen />;
   if (!user) return <Navigate to="/login" replace />;
+  if (needsSetup) return <Navigate to="/setup" replace />;
   return <>{children}</>;
 }
 
 function PublicRoute({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-navy-950 flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-navy-600 border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
-  if (user) return <Navigate to="/dashboard" replace />;
+  const { user, loading, needsSetup } = useAuth();
+  if (loading) return <LoadingScreen />;
+  if (user && !needsSetup) return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
 }
 
@@ -43,6 +41,7 @@ function AppRoutes() {
       <Route path="/" element={<PublicRoute><LandingPage /></PublicRoute>} />
       <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
       <Route path="/register" element={<PublicRoute><RegisterPage /></PublicRoute>} />
+      <Route path="/setup" element={<SetupPage />} />
       <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/compliance" element={<CompliancePage />} />
@@ -58,10 +57,10 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <HashRouter>
       <AuthProvider>
         <AppRoutes />
       </AuthProvider>
-    </BrowserRouter>
+    </HashRouter>
   );
 }

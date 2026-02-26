@@ -9,9 +9,11 @@ interface AuthState {
   profile: UserProfile | null;
   organization: Organization | null;
   loading: boolean;
+  needsSetup: boolean;
   signUp: (email: string, password: string, fullName: string, orgName: string) => Promise<{ error: string | null }>;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
+  completeSetup: (fullName: string, orgName: string) => Promise<{ error: string | null }>;
 }
 
 const AuthContext = createContext<AuthState | undefined>(undefined);
@@ -22,8 +24,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [loading, setLoading] = useState(true);
+  const [needsSetup, setNeedsSetup] = useState(false);
 
-  async function fetchProfileAndOrg(userId: string) {
+  async function fetchProfileAndOrg(userId: string): Promise<boolean> {
     const { data: profileData } = await supabase
       .from('user_profiles')
       .select('*')
@@ -32,6 +35,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     if (profileData) {
       setProfile(profileData);
+      setNeedsSetup(false);
       if (profileData.organization_id) {
         const { data: orgData } = await supabase
           .from('organizations')
@@ -40,7 +44,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .maybeSingle();
         setOrganization(orgData);
       }
+      return true;
     }
+    setNeedsSetup(true);
+    return false;
   }
 
   useEffect(() => {
@@ -64,16 +71,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else {
         setProfile(null);
         setOrganization(null);
+        setNeedsSetup(false);
       }
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  async function signUp(email: string, password: string, fullName: string, orgName: string) {
-    const { data: authData, error: authError } = await supabase.auth.signUp({ email, password });
-    if (authError) return { error: authError.message };
-    if (!authData.user) return { error: 'Registration failed' };
+  async function completeSetup(fullName: string, orgName: string) {
+    if (!user) return { error: 'Not authenticated' };
 
     const { data: org, error: orgError } = await supabase
       .from('organizations')
@@ -86,6 +92,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { error: profileError } = await supabase
       .from('user_profiles')
       .insert({
+        id: user.id,
+        organization_id: org.id,
+        role: 'admin',
+        full_name: fullName,
+        email: user.email ?? '',
+      });
+
+    if (profileError) return { error: profileError.message };
+
+    setOrganization(org);
+    await fetchProfileAndOrg(user.id);
+    return { error: null };
+  }
+
+  async function signUp(email: string, password: string, fullName: string, orgName: string) {
+    const { data: authData, error: authError } = await supabase.auth.signUp({ email, password });
+    if (authError) return { error: authError.message };
+    if (!authData.user) return { error: 'Registration failed' };
+
+    const { data: org, error: orgError } = await supabase
+      .from('organizations')
+      .insert({ name: orgName })
+      .select()
+      .single();
+
+    if (orgError) {
+      await supabase.auth.signOut();
+      return { error: orgError.message };
+    }
+
+    const { error: profileError } = await supabase
+      .from('user_profiles')
+      .insert({
         id: authData.user.id,
         organization_id: org.id,
         role: 'admin',
@@ -93,7 +132,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email,
       });
 
-    if (profileError) return { error: profileError.message };
+    if (profileError) {
+      await supabase.auth.signOut();
+      return { error: profileError.message };
+    }
 
     setOrganization(org);
     await fetchProfileAndOrg(authData.user.id);
@@ -110,10 +152,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut();
     setProfile(null);
     setOrganization(null);
+    setNeedsSetup(false);
   }
 
   return (
-    <AuthContext.Provider value={{ user, session, profile, organization, loading, signUp, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, session, profile, organization, loading, needsSetup, signUp, signIn, signOut, completeSetup }}>
       {children}
     </AuthContext.Provider>
   );
