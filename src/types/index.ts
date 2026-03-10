@@ -96,6 +96,18 @@ export interface Notification {
   created_at: string;
 }
 
+export interface StateRegistrationDocument {
+  id: string;
+  state_registration_id: string;
+  organization_id: string;
+  file_name: string;
+  file_path: string;
+  file_size: number;
+  content_type: string;
+  uploaded_by: string | null;
+  created_at: string;
+}
+
 export interface AuditLogEntry {
   id: string;
   organization_id: string;

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   MapPin,
@@ -10,8 +10,10 @@ import {
   ExternalLink,
   Save,
   Trash2,
+  Paperclip,
 } from 'lucide-react';
 import { useComplianceData } from '../../hooks/useComplianceData';
+import { useStateDocuments } from '../../hooks/useStateDocuments';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { getDeadlineStatus, formatDate, daysUntil, US_STATES } from '../../lib/utils';
@@ -20,6 +22,7 @@ import type { StateRegistration } from '../../types';
 import StatusBadge from '../../components/ui/StatusBadge';
 import Modal from '../../components/ui/Modal';
 import EmptyState from '../../components/ui/EmptyState';
+import DocumentsPanel from '../../components/states/DocumentsPanel';
 
 interface StateForm {
   state: string;
@@ -57,15 +60,43 @@ function PortalLink({ stateName, className }: { stateName: string; className?: s
 export default function StatesPage() {
   const { organization } = useAuth();
   const { states, loading, refetch } = useComplianceData();
+  const {
+    documents,
+    loadingDocs,
+    uploading,
+    uploadError,
+    docCounts,
+    fetchDocuments,
+    fetchDocCounts,
+    uploadDocument,
+    deleteDocument,
+    deleteAllForRegistration,
+    getDownloadUrl,
+    clearDocuments,
+  } = useStateDocuments();
+
   const [showAdd, setShowAdd] = useState(false);
+  const [addedRegistrationId, setAddedRegistrationId] = useState<string | null>(null);
   const [editingState, setEditingState] = useState<StateRegistration | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [form, setForm] = useState<StateForm>(emptyForm);
 
+  useEffect(() => {
+    fetchDocCounts();
+  }, [fetchDocCounts, states]);
+
   function openAdd() {
     setForm(emptyForm);
+    setAddedRegistrationId(null);
     setShowAdd(true);
+  }
+
+  function closeAdd() {
+    setShowAdd(false);
+    setAddedRegistrationId(null);
+    setForm(emptyForm);
+    clearDocuments();
   }
 
   function openEdit(reg: StateRegistration) {
@@ -77,29 +108,38 @@ export default function StatesPage() {
       registration_number: reg.registration_number ?? '',
     });
     setEditingState(reg);
+    fetchDocuments(reg.id);
   }
 
   function closeEdit() {
     setEditingState(null);
     setForm(emptyForm);
+    clearDocuments();
   }
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
     if (!organization) return;
     setSaving(true);
-    await supabase.from('states_registered').insert({
-      organization_id: organization.id,
-      state: form.state,
-      registration_status: form.registration_status,
-      renewal_due_date: form.renewal_due_date || null,
-      solicitation_active: form.solicitation_active,
-      registration_number: form.registration_number || null,
-    });
-    setForm(emptyForm);
-    setShowAdd(false);
+    const { data } = await supabase
+      .from('states_registered')
+      .insert({
+        organization_id: organization.id,
+        state: form.state,
+        registration_status: form.registration_status,
+        renewal_due_date: form.renewal_due_date || null,
+        solicitation_active: form.solicitation_active,
+        registration_number: form.registration_number || null,
+      })
+      .select()
+      .maybeSingle();
     setSaving(false);
-    await refetch();
+
+    if (data) {
+      setAddedRegistrationId(data.id);
+      fetchDocuments(data.id);
+      await refetch();
+    }
   }
 
   async function handleUpdate(e: React.FormEvent) {
@@ -123,10 +163,30 @@ export default function StatesPage() {
   async function handleDelete() {
     if (!editingState) return;
     setDeleting(true);
+    await deleteAllForRegistration(editingState.id);
     await supabase.from('states_registered').delete().eq('id', editingState.id);
     setDeleting(false);
     closeEdit();
     await refetch();
+  }
+
+  async function handleUploadInAdd(file: File) {
+    if (!addedRegistrationId) return null;
+    const doc = await uploadDocument(addedRegistrationId, file);
+    if (doc) fetchDocCounts();
+    return doc;
+  }
+
+  async function handleUploadInEdit(file: File) {
+    if (!editingState) return null;
+    const doc = await uploadDocument(editingState.id, file);
+    if (doc) fetchDocCounts();
+    return doc;
+  }
+
+  async function handleDeleteDoc(docId: string, filePath: string) {
+    await deleteDocument(docId, filePath);
+    fetchDocCounts();
   }
 
   if (loading) {
@@ -144,6 +204,9 @@ export default function StatesPage() {
   });
 
   const selectedPortal = form.state ? STATE_PORTALS[form.state] : null;
+  const addedStateName = addedRegistrationId
+    ? states.find((s) => s.id === addedRegistrationId)?.state ?? form.state
+    : form.state;
 
   return (
     <div className="space-y-8">
@@ -203,6 +266,7 @@ export default function StatesPage() {
                 {states.map((state, i) => {
                   const deadlineStatus = getDeadlineStatus(state.renewal_due_date);
                   const days = daysUntil(state.renewal_due_date);
+                  const hasDocuments = (docCounts[state.id] ?? 0) > 0;
                   return (
                     <motion.tr
                       key={state.id}
@@ -218,6 +282,9 @@ export default function StatesPage() {
                           <span className="text-sm font-medium text-slate-300 group-hover:text-white transition-colors">
                             {state.state}
                           </span>
+                          {hasDocuments && (
+                            <Paperclip className="w-3.5 h-3.5 text-slate-500" />
+                          )}
                         </div>
                       </td>
                       <td className="px-5 py-3.5">
@@ -272,92 +339,113 @@ export default function StatesPage() {
         )}
       </div>
 
-      {/* Add Modal */}
-      <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add State Registration">
-        <form onSubmit={handleAdd} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-400 mb-2">State</label>
-            <select
-              value={form.state}
-              onChange={(e) => setForm({ ...form, state: e.target.value })}
-              className="input-field"
-              required
-            >
-              <option value="">Select a state</option>
-              {US_STATES.filter(s => !states.some(existing => existing.state === s)).map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
-          </div>
-          {selectedPortal && (
-            <a
-              href={selectedPortal.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2 px-4 py-3 rounded-xl bg-sky-500/5 border border-sky-500/15 text-sky-400 hover:bg-sky-500/10 transition-colors"
-            >
-              <ExternalLink className="w-4 h-4 shrink-0" />
-              <div className="min-w-0">
-                <p className="text-sm font-medium">Open {form.state} Portal</p>
-                <p className="text-xs text-sky-400/60 truncate">{selectedPortal.agency}</p>
-              </div>
-            </a>
-          )}
-          <div>
-            <label className="block text-sm font-medium text-slate-400 mb-2">Registration Status</label>
-            <select
-              value={form.registration_status}
-              onChange={(e) => setForm({ ...form, registration_status: e.target.value })}
-              className="input-field"
-            >
-              <option value="active">Active</option>
-              <option value="pending">Pending</option>
-              <option value="expired">Expired</option>
-              <option value="exempt">Exempt</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-400 mb-2">Registration Number</label>
-            <input
-              type="text"
-              value={form.registration_number}
-              onChange={(e) => setForm({ ...form, registration_number: e.target.value })}
-              className="input-field"
-              placeholder="e.g. CH-12345"
+      <Modal open={showAdd} onClose={closeAdd} title={addedRegistrationId ? `${addedStateName} -- Attach Documents` : 'Add State Registration'} size="lg">
+        {!addedRegistrationId ? (
+          <form onSubmit={handleAdd} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-400 mb-2">State</label>
+              <select
+                value={form.state}
+                onChange={(e) => setForm({ ...form, state: e.target.value })}
+                className="input-field"
+                required
+              >
+                <option value="">Select a state</option>
+                {US_STATES.filter(s => !states.some(existing => existing.state === s)).map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </div>
+            {selectedPortal && (
+              <a
+                href={selectedPortal.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 px-4 py-3 rounded-xl bg-sky-500/5 border border-sky-500/15 text-sky-400 hover:bg-sky-500/10 transition-colors"
+              >
+                <ExternalLink className="w-4 h-4 shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">Open {form.state} Portal</p>
+                  <p className="text-xs text-sky-400/60 truncate">{selectedPortal.agency}</p>
+                </div>
+              </a>
+            )}
+            <div>
+              <label className="block text-sm font-medium text-slate-400 mb-2">Registration Status</label>
+              <select
+                value={form.registration_status}
+                onChange={(e) => setForm({ ...form, registration_status: e.target.value })}
+                className="input-field"
+              >
+                <option value="active">Active</option>
+                <option value="pending">Pending</option>
+                <option value="expired">Expired</option>
+                <option value="exempt">Exempt</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-400 mb-2">Registration Number</label>
+              <input
+                type="text"
+                value={form.registration_number}
+                onChange={(e) => setForm({ ...form, registration_number: e.target.value })}
+                className="input-field"
+                placeholder="e.g. CH-12345"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-400 mb-2">Renewal Due Date</label>
+              <input
+                type="date"
+                value={form.renewal_due_date}
+                onChange={(e) => setForm({ ...form, renewal_due_date: e.target.value })}
+                className="input-field"
+              />
+            </div>
+            <div className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                checked={form.solicitation_active}
+                onChange={(e) => setForm({ ...form, solicitation_active: e.target.checked })}
+                className="w-4 h-4 rounded border-navy-700/50 bg-navy-900 text-navy-500 focus:ring-navy-500"
+              />
+              <label className="text-sm text-slate-400">Actively soliciting in this state</label>
+            </div>
+            <div className="flex gap-3 pt-2">
+              <button type="submit" disabled={saving} className="btn-primary flex items-center gap-2 text-sm">
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                Add Registration
+              </button>
+              <button type="button" onClick={closeAdd} className="btn-secondary text-sm">
+                Cancel
+              </button>
+            </div>
+          </form>
+        ) : (
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-success-500/5 border border-success-500/15">
+              <CheckCircle2 className="w-4 h-4 text-success-400 shrink-0" />
+              <p className="text-sm text-success-400">Registration added. You can now attach documents.</p>
+            </div>
+            <DocumentsPanel
+              documents={documents}
+              loading={loadingDocs}
+              uploading={uploading}
+              uploadError={uploadError}
+              onUpload={handleUploadInAdd}
+              onDelete={handleDeleteDoc}
+              onDownload={getDownloadUrl}
             />
+            <div className="flex justify-end pt-2">
+              <button type="button" onClick={closeAdd} className="btn-primary text-sm">
+                Done
+              </button>
+            </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-400 mb-2">Renewal Due Date</label>
-            <input
-              type="date"
-              value={form.renewal_due_date}
-              onChange={(e) => setForm({ ...form, renewal_due_date: e.target.value })}
-              className="input-field"
-            />
-          </div>
-          <div className="flex items-center gap-3">
-            <input
-              type="checkbox"
-              checked={form.solicitation_active}
-              onChange={(e) => setForm({ ...form, solicitation_active: e.target.checked })}
-              className="w-4 h-4 rounded border-navy-700/50 bg-navy-900 text-navy-500 focus:ring-navy-500"
-            />
-            <label className="text-sm text-slate-400">Actively soliciting in this state</label>
-          </div>
-          <div className="flex gap-3 pt-2">
-            <button type="submit" disabled={saving} className="btn-primary flex items-center gap-2 text-sm">
-              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-              Add Registration
-            </button>
-            <button type="button" onClick={() => setShowAdd(false)} className="btn-secondary text-sm">
-              Cancel
-            </button>
-          </div>
-        </form>
+        )}
       </Modal>
 
-      {/* Edit Modal */}
-      <Modal open={!!editingState} onClose={closeEdit} title={`Edit ${editingState?.state ?? ''} Registration`}>
+      <Modal open={!!editingState} onClose={closeEdit} title={`Edit ${editingState?.state ?? ''} Registration`} size="lg">
         <form onSubmit={handleUpdate} className="space-y-4">
           {editingState && STATE_PORTALS[editingState.state] && (
             <a
@@ -414,6 +502,19 @@ export default function StatesPage() {
             />
             <label className="text-sm text-slate-400">Actively soliciting in this state</label>
           </div>
+
+          <div className="border-t border-navy-800/40 pt-4 mt-4">
+            <DocumentsPanel
+              documents={documents}
+              loading={loadingDocs}
+              uploading={uploading}
+              uploadError={uploadError}
+              onUpload={handleUploadInEdit}
+              onDelete={handleDeleteDoc}
+              onDownload={getDownloadUrl}
+            />
+          </div>
+
           <div className="flex items-center justify-between pt-2">
             <button
               type="button"
