@@ -85,27 +85,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!user) return { error: 'Not authenticated' };
     isSettingUp.current = true;
     try {
-      const { data: org, error: orgError } = await supabase
-        .from('organizations')
-        .insert({ name: orgName })
-        .select()
-        .single();
+      const { data, error } = await supabase.rpc('create_org_and_profile', {
+        org_name: orgName,
+        user_full_name: fullName,
+        user_email: user.email ?? '',
+      });
 
-      if (orgError) return { error: orgError.message };
+      if (error) return { error: error.message };
 
-      const { error: profileError } = await supabase
-        .from('user_profiles')
-        .insert({
-          id: user.id,
-          organization_id: org.id,
-          role: 'admin',
-          full_name: fullName,
-          email: user.email ?? '',
-        });
-
-      if (profileError) return { error: profileError.message };
-
-      setOrganization(org);
+      setOrganization(data);
       await fetchProfileAndOrg(user.id);
       return { error: null };
     } finally {
@@ -120,33 +108,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (authError) return { error: authError.message };
       if (!authData.user) return { error: 'Registration failed' };
 
-      const { data: org, error: orgError } = await supabase
-        .from('organizations')
-        .insert({ name: orgName })
-        .select()
-        .single();
+      const { data, error } = await supabase.rpc('create_org_and_profile', {
+        org_name: orgName,
+        user_full_name: fullName,
+        user_email: email,
+      });
 
-      if (orgError) {
+      if (error) {
         await supabase.auth.signOut();
-        return { error: orgError.message };
+        return { error: error.message };
       }
 
-      const { error: profileError } = await supabase
-        .from('user_profiles')
-        .insert({
-          id: authData.user.id,
-          organization_id: org.id,
-          role: 'admin',
-          full_name: fullName,
-          email,
-        });
-
-      if (profileError) {
-        await supabase.auth.signOut();
-        return { error: profileError.message };
-      }
-
-      setOrganization(org);
+      setOrganization(data);
       await fetchProfileAndOrg(authData.user.id);
       return { error: null };
     } finally {
