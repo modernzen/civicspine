@@ -7,27 +7,82 @@ import {
   AlertTriangle,
   AlertCircle,
   Loader2,
+  ExternalLink,
+  Save,
+  Trash2,
 } from 'lucide-react';
 import { useComplianceData } from '../../hooks/useComplianceData';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { getDeadlineStatus, formatDate, daysUntil, US_STATES } from '../../lib/utils';
+import { STATE_PORTALS } from '../../lib/statePortals';
+import type { StateRegistration } from '../../types';
 import StatusBadge from '../../components/ui/StatusBadge';
 import Modal from '../../components/ui/Modal';
 import EmptyState from '../../components/ui/EmptyState';
+
+interface StateForm {
+  state: string;
+  registration_status: string;
+  renewal_due_date: string;
+  solicitation_active: boolean;
+  registration_number: string;
+}
+
+const emptyForm: StateForm = {
+  state: '',
+  registration_status: 'active',
+  renewal_due_date: '',
+  solicitation_active: true,
+  registration_number: '',
+};
+
+function PortalLink({ stateName, className }: { stateName: string; className?: string }) {
+  const portal = STATE_PORTALS[stateName];
+  if (!portal) return null;
+  return (
+    <a
+      href={portal.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={(e) => e.stopPropagation()}
+      className={className || 'inline-flex items-center gap-1.5 text-xs text-sky-400 hover:text-sky-300 transition-colors'}
+    >
+      <ExternalLink className="w-3.5 h-3.5" />
+      <span>{portal.agency}</span>
+    </a>
+  );
+}
 
 export default function StatesPage() {
   const { organization } = useAuth();
   const { states, loading, refetch } = useComplianceData();
   const [showAdd, setShowAdd] = useState(false);
+  const [editingState, setEditingState] = useState<StateRegistration | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [form, setForm] = useState<StateForm>(emptyForm);
 
-  const [form, setForm] = useState({
-    state: '',
-    registration_status: 'active',
-    renewal_due_date: '',
-    solicitation_active: true,
-  });
+  function openAdd() {
+    setForm(emptyForm);
+    setShowAdd(true);
+  }
+
+  function openEdit(reg: StateRegistration) {
+    setForm({
+      state: reg.state,
+      registration_status: reg.registration_status,
+      renewal_due_date: reg.renewal_due_date ?? '',
+      solicitation_active: reg.solicitation_active,
+      registration_number: reg.registration_number ?? '',
+    });
+    setEditingState(reg);
+  }
+
+  function closeEdit() {
+    setEditingState(null);
+    setForm(emptyForm);
+  }
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
@@ -39,15 +94,38 @@ export default function StatesPage() {
       registration_status: form.registration_status,
       renewal_due_date: form.renewal_due_date || null,
       solicitation_active: form.solicitation_active,
+      registration_number: form.registration_number || null,
     });
-    setForm({ state: '', registration_status: 'active', renewal_due_date: '', solicitation_active: true });
+    setForm(emptyForm);
     setShowAdd(false);
     setSaving(false);
     await refetch();
   }
 
-  async function toggleSolicitation(id: string, current: boolean) {
-    await supabase.from('states_registered').update({ solicitation_active: !current }).eq('id', id);
+  async function handleUpdate(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingState) return;
+    setSaving(true);
+    await supabase
+      .from('states_registered')
+      .update({
+        registration_status: form.registration_status,
+        renewal_due_date: form.renewal_due_date || null,
+        solicitation_active: form.solicitation_active,
+        registration_number: form.registration_number || null,
+      })
+      .eq('id', editingState.id);
+    setSaving(false);
+    closeEdit();
+    await refetch();
+  }
+
+  async function handleDelete() {
+    if (!editingState) return;
+    setDeleting(true);
+    await supabase.from('states_registered').delete().eq('id', editingState.id);
+    setDeleting(false);
+    closeEdit();
     await refetch();
   }
 
@@ -65,6 +143,8 @@ export default function StatesPage() {
     return status === 'urgent' || status === 'overdue';
   });
 
+  const selectedPortal = form.state ? STATE_PORTALS[form.state] : null;
+
   return (
     <div className="space-y-8">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -74,7 +154,7 @@ export default function StatesPage() {
             Track charitable solicitation registrations across jurisdictions
           </p>
         </div>
-        <button onClick={() => setShowAdd(true)} className="btn-primary flex items-center gap-2 text-sm">
+        <button onClick={openAdd} className="btn-primary flex items-center gap-2 text-sm">
           <Plus className="w-4 h-4" /> Add State
         </button>
       </div>
@@ -103,7 +183,7 @@ export default function StatesPage() {
             icon={MapPin}
             title="No state registrations"
             description="Add the states where your organization solicits donations to track registration requirements."
-            action={{ label: 'Add State', onClick: () => setShowAdd(true) }}
+            action={{ label: 'Add State', onClick: openAdd }}
           />
         ) : (
           <div className="overflow-x-auto">
@@ -112,9 +192,11 @@ export default function StatesPage() {
                 <tr className="border-b border-navy-800/40">
                   <th className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider px-5 py-3">State</th>
                   <th className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider px-5 py-3">Status</th>
+                  <th className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider px-5 py-3">Reg #</th>
                   <th className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider px-5 py-3">Renewal Due</th>
                   <th className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider px-5 py-3">Solicitation</th>
                   <th className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider px-5 py-3">Deadline</th>
+                  <th className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider px-5 py-3">Portal</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-navy-800/20">
@@ -127,31 +209,39 @@ export default function StatesPage() {
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       transition={{ delay: i * 0.03 }}
-                      className="hover:bg-navy-800/10 transition-colors"
+                      onClick={() => openEdit(state)}
+                      className="hover:bg-navy-800/20 transition-colors cursor-pointer group"
                     >
                       <td className="px-5 py-3.5">
                         <div className="flex items-center gap-3">
                           <MapPin className="w-4 h-4 text-slate-500" />
-                          <span className="text-sm font-medium text-slate-300">{state.state}</span>
+                          <span className="text-sm font-medium text-slate-300 group-hover:text-white transition-colors">
+                            {state.state}
+                          </span>
                         </div>
                       </td>
                       <td className="px-5 py-3.5">
-                        <StatusBadge status={state.registration_status === 'active' ? 'active' : state.registration_status === 'expired' ? 'overdue' : 'pending'} label={state.registration_status} />
+                        <StatusBadge
+                          status={state.registration_status === 'active' ? 'active' : state.registration_status === 'expired' ? 'overdue' : 'pending'}
+                          label={state.registration_status}
+                        />
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <span className="text-sm text-slate-400 font-mono">
+                          {state.registration_number || '--'}
+                        </span>
                       </td>
                       <td className="px-5 py-3.5">
                         <span className="text-sm text-slate-400">{formatDate(state.renewal_due_date)}</span>
                       </td>
                       <td className="px-5 py-3.5">
-                        <button
-                          onClick={() => toggleSolicitation(state.id, state.solicitation_active)}
-                          className={`text-xs font-medium px-3 py-1 rounded-full transition-all ${
-                            state.solicitation_active
-                              ? 'bg-success-500/10 text-success-400 border border-success-500/20'
-                              : 'bg-navy-800/40 text-slate-500 border border-navy-700/30'
-                          }`}
-                        >
+                        <span className={`text-xs font-medium px-3 py-1 rounded-full ${
+                          state.solicitation_active
+                            ? 'bg-success-500/10 text-success-400 border border-success-500/20'
+                            : 'bg-navy-800/40 text-slate-500 border border-navy-700/30'
+                        }`}>
                           {state.solicitation_active ? 'Active' : 'Inactive'}
-                        </button>
+                        </span>
                       </td>
                       <td className="px-5 py-3.5">
                         {days !== null ? (
@@ -170,6 +260,9 @@ export default function StatesPage() {
                           <span className="text-sm text-slate-500">--</span>
                         )}
                       </td>
+                      <td className="px-5 py-3.5">
+                        <PortalLink stateName={state.state} />
+                      </td>
                     </motion.tr>
                   );
                 })}
@@ -179,6 +272,7 @@ export default function StatesPage() {
         )}
       </div>
 
+      {/* Add Modal */}
       <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add State Registration">
         <form onSubmit={handleAdd} className="space-y-4">
           <div>
@@ -190,11 +284,25 @@ export default function StatesPage() {
               required
             >
               <option value="">Select a state</option>
-              {US_STATES.map((s) => (
+              {US_STATES.filter(s => !states.some(existing => existing.state === s)).map((s) => (
                 <option key={s} value={s}>{s}</option>
               ))}
             </select>
           </div>
+          {selectedPortal && (
+            <a
+              href={selectedPortal.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 px-4 py-3 rounded-xl bg-sky-500/5 border border-sky-500/15 text-sky-400 hover:bg-sky-500/10 transition-colors"
+            >
+              <ExternalLink className="w-4 h-4 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-sm font-medium">Open {form.state} Portal</p>
+                <p className="text-xs text-sky-400/60 truncate">{selectedPortal.agency}</p>
+              </div>
+            </a>
+          )}
           <div>
             <label className="block text-sm font-medium text-slate-400 mb-2">Registration Status</label>
             <select
@@ -207,6 +315,16 @@ export default function StatesPage() {
               <option value="expired">Expired</option>
               <option value="exempt">Exempt</option>
             </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-400 mb-2">Registration Number</label>
+            <input
+              type="text"
+              value={form.registration_number}
+              onChange={(e) => setForm({ ...form, registration_number: e.target.value })}
+              className="input-field"
+              placeholder="e.g. CH-12345"
+            />
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-400 mb-2">Renewal Due Date</label>
@@ -234,6 +352,87 @@ export default function StatesPage() {
             <button type="button" onClick={() => setShowAdd(false)} className="btn-secondary text-sm">
               Cancel
             </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Edit Modal */}
+      <Modal open={!!editingState} onClose={closeEdit} title={`Edit ${editingState?.state ?? ''} Registration`}>
+        <form onSubmit={handleUpdate} className="space-y-4">
+          {editingState && STATE_PORTALS[editingState.state] && (
+            <a
+              href={STATE_PORTALS[editingState.state].url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-3 px-4 py-3 rounded-xl bg-sky-500/5 border border-sky-500/15 text-sky-400 hover:bg-sky-500/10 transition-colors"
+            >
+              <ExternalLink className="w-4 h-4 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-sm font-medium">Open {editingState.state} State Portal</p>
+                <p className="text-xs text-sky-400/60 truncate">{STATE_PORTALS[editingState.state].agency}</p>
+              </div>
+            </a>
+          )}
+          <div>
+            <label className="block text-sm font-medium text-slate-400 mb-2">Registration Status</label>
+            <select
+              value={form.registration_status}
+              onChange={(e) => setForm({ ...form, registration_status: e.target.value })}
+              className="input-field"
+            >
+              <option value="active">Active</option>
+              <option value="pending">Pending</option>
+              <option value="expired">Expired</option>
+              <option value="exempt">Exempt</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-400 mb-2">Registration Number</label>
+            <input
+              type="text"
+              value={form.registration_number}
+              onChange={(e) => setForm({ ...form, registration_number: e.target.value })}
+              className="input-field"
+              placeholder="e.g. CH-12345"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-400 mb-2">Renewal Due Date</label>
+            <input
+              type="date"
+              value={form.renewal_due_date}
+              onChange={(e) => setForm({ ...form, renewal_due_date: e.target.value })}
+              className="input-field"
+            />
+          </div>
+          <div className="flex items-center gap-3">
+            <input
+              type="checkbox"
+              checked={form.solicitation_active}
+              onChange={(e) => setForm({ ...form, solicitation_active: e.target.checked })}
+              className="w-4 h-4 rounded border-navy-700/50 bg-navy-900 text-navy-500 focus:ring-navy-500"
+            />
+            <label className="text-sm text-slate-400">Actively soliciting in this state</label>
+          </div>
+          <div className="flex items-center justify-between pt-2">
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={deleting}
+              className="flex items-center gap-2 text-sm text-red-400 hover:text-red-300 transition-colors px-3 py-2 rounded-lg hover:bg-red-500/10"
+            >
+              {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+              Remove
+            </button>
+            <div className="flex gap-3">
+              <button type="button" onClick={closeEdit} className="btn-secondary text-sm">
+                Cancel
+              </button>
+              <button type="submit" disabled={saving} className="btn-primary flex items-center gap-2 text-sm">
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                Save Changes
+              </button>
+            </div>
           </div>
         </form>
       </Modal>

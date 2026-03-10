@@ -37,6 +37,7 @@ export interface StateRegistration {
   renewal_due_date: string | null;
   solicitation_active: boolean;
   document_url: string;
+  registration_number: string | null;
   created_at: string;
 }
 
