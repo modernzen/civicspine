@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, useRef, type ReactNode } from 'react';
 import type { User, Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import type { UserProfile, Organization } from '../types';
@@ -26,6 +26,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [loading, setLoading] = useState(true);
   const [needsSetup, setNeedsSetup] = useState(false);
+  const isSettingUp = useRef(false);
 
   async function fetchProfileAndOrg(userId: string): Promise<boolean> {
     const { data: profileData } = await supabase
@@ -65,6 +66,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
       setSession(s);
       setUser(s?.user ?? null);
+      if (isSettingUp.current) return;
       if (s?.user) {
         (async () => {
           await fetchProfileAndOrg(s.user.id);
@@ -81,66 +83,75 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function completeSetup(fullName: string, orgName: string) {
     if (!user) return { error: 'Not authenticated' };
+    isSettingUp.current = true;
+    try {
+      const { data: org, error: orgError } = await supabase
+        .from('organizations')
+        .insert({ name: orgName })
+        .select()
+        .single();
 
-    const { data: org, error: orgError } = await supabase
-      .from('organizations')
-      .insert({ name: orgName })
-      .select()
-      .single();
+      if (orgError) return { error: orgError.message };
 
-    if (orgError) return { error: orgError.message };
+      const { error: profileError } = await supabase
+        .from('user_profiles')
+        .insert({
+          id: user.id,
+          organization_id: org.id,
+          role: 'admin',
+          full_name: fullName,
+          email: user.email ?? '',
+        });
 
-    const { error: profileError } = await supabase
-      .from('user_profiles')
-      .insert({
-        id: user.id,
-        organization_id: org.id,
-        role: 'admin',
-        full_name: fullName,
-        email: user.email ?? '',
-      });
+      if (profileError) return { error: profileError.message };
 
-    if (profileError) return { error: profileError.message };
-
-    setOrganization(org);
-    await fetchProfileAndOrg(user.id);
-    return { error: null };
+      setOrganization(org);
+      await fetchProfileAndOrg(user.id);
+      return { error: null };
+    } finally {
+      isSettingUp.current = false;
+    }
   }
 
   async function signUp(email: string, password: string, fullName: string, orgName: string) {
-    const { data: authData, error: authError } = await supabase.auth.signUp({ email, password });
-    if (authError) return { error: authError.message };
-    if (!authData.user) return { error: 'Registration failed' };
+    isSettingUp.current = true;
+    try {
+      const { data: authData, error: authError } = await supabase.auth.signUp({ email, password });
+      if (authError) return { error: authError.message };
+      if (!authData.user) return { error: 'Registration failed' };
 
-    const { data: org, error: orgError } = await supabase
-      .from('organizations')
-      .insert({ name: orgName })
-      .select()
-      .single();
+      const { data: org, error: orgError } = await supabase
+        .from('organizations')
+        .insert({ name: orgName })
+        .select()
+        .single();
 
-    if (orgError) {
-      await supabase.auth.signOut();
-      return { error: orgError.message };
+      if (orgError) {
+        await supabase.auth.signOut();
+        return { error: orgError.message };
+      }
+
+      const { error: profileError } = await supabase
+        .from('user_profiles')
+        .insert({
+          id: authData.user.id,
+          organization_id: org.id,
+          role: 'admin',
+          full_name: fullName,
+          email,
+        });
+
+      if (profileError) {
+        await supabase.auth.signOut();
+        return { error: profileError.message };
+      }
+
+      setOrganization(org);
+      await fetchProfileAndOrg(authData.user.id);
+      return { error: null };
+    } finally {
+      isSettingUp.current = false;
     }
-
-    const { error: profileError } = await supabase
-      .from('user_profiles')
-      .insert({
-        id: authData.user.id,
-        organization_id: org.id,
-        role: 'admin',
-        full_name: fullName,
-        email,
-      });
-
-    if (profileError) {
-      await supabase.auth.signOut();
-      return { error: profileError.message };
-    }
-
-    setOrganization(org);
-    await fetchProfileAndOrg(authData.user.id);
-    return { error: null };
   }
 
   async function signIn(email: string, password: string) {
