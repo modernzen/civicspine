@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   FileCheck2,
@@ -9,11 +10,18 @@ import {
   Clock,
   FileText,
   Loader2,
+  Sparkles,
+  ArrowRight,
+  CalendarClock,
+  Trash2,
 } from 'lucide-react';
 import { useComplianceData } from '../../hooks/useComplianceData';
+import { useFilingDrafts } from '../../hooks/useFilingData';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { getDeadlineStatus, formatDate, daysUntil, classNames } from '../../lib/utils';
+import { getFilingSections } from '../../types';
+import type { FormType, FilingDraft, FilingStatus } from '../../types';
 import StatusBadge from '../../components/ui/StatusBadge';
 import DeadlineCountdown from '../../components/ui/DeadlineCountdown';
 import Modal from '../../components/ui/Modal';
@@ -34,10 +42,32 @@ const CHECKLIST_990 = [
   { key: 'public_inspection', label: 'Public inspection copy available' },
 ];
 
+function getFilingStatusBadge(status: FilingStatus) {
+  switch (status) {
+    case 'draft': return 'badge-warning';
+    case 'in_review': return 'badge-neutral';
+    case 'approved': return 'badge-success';
+    case 'filed': return 'badge-success';
+  }
+}
+
+function getFilingStatusLabel(status: FilingStatus) {
+  switch (status) {
+    case 'draft': return 'Draft';
+    case 'in_review': return 'In Review';
+    case 'approved': return 'Approved';
+    case 'filed': return 'Filed';
+  }
+}
+
 export default function CompliancePage() {
   const { organization } = useAuth();
   const { tasks, loading, refetch } = useComplianceData();
+  const { drafts, loading: draftsLoading, createDraft, refetch: refetchDrafts } = useFilingDrafts();
+  const navigate = useNavigate();
+
   const [showAdd, setShowAdd] = useState(false);
+  const [showNewFiling, setShowNewFiling] = useState(false);
   const [saving, setSaving] = useState(false);
   const [checkedItems, setCheckedItems] = useState<Set<string>>(new Set());
 
@@ -49,8 +79,11 @@ export default function CompliancePage() {
     notes: '',
   });
 
+  const [newFilingYear, setNewFilingYear] = useState(new Date().getFullYear());
+
   const irsTasks = tasks.filter(t => t.type === 'IRS_990');
   const activeIRS = irsTasks.find(t => t.status !== 'complete');
+  const formType = (organization?.form_990_type ?? '990-EZ') as FormType;
 
   async function handleAddTask(e: React.FormEvent) {
     e.preventDefault();
@@ -75,7 +108,26 @@ export default function CompliancePage() {
     await refetch();
   }
 
-  if (loading) {
+  async function handleStartFiling() {
+    const draft = await createDraft(newFilingYear, formType);
+    setShowNewFiling(false);
+    if (draft) {
+      navigate(`/compliance/filing/${draft.id}`);
+    }
+  }
+
+  async function deleteDraft(id: string) {
+    await supabase.from('filing_drafts').delete().eq('id', id);
+    await refetchDrafts();
+  }
+
+  function getDraftProgress(draft: FilingDraft): number {
+    const sectionDefs = getFilingSections(draft.form_type as FormType);
+    if (draft.status === 'filed' || draft.status === 'approved') return 100;
+    return Math.round((draft.current_step / (sectionDefs.length + 1)) * 100);
+  }
+
+  if (loading || draftsLoading) {
     return (
       <div className="flex items-center justify-center py-32">
         <div className="w-8 h-8 border-2 border-navy-600 border-t-transparent rounded-full animate-spin" />
@@ -89,13 +141,104 @@ export default function CompliancePage() {
         <div>
           <h1 className="text-2xl font-bold text-white mb-1">IRS 990 Filing Assistant</h1>
           <p className="text-sm text-slate-500">
-            Track your IRS filing obligations and validate before submission
+            Prepare your IRS filing with AI-powered form completion
           </p>
         </div>
-        <button onClick={() => setShowAdd(true)} className="btn-primary flex items-center gap-2 text-sm">
-          <Plus className="w-4 h-4" /> Add Task
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setShowNewFiling(true)} className="btn-primary flex items-center gap-2 text-sm">
+            <Sparkles className="w-4 h-4" /> Start New Filing
+          </button>
+          <button onClick={() => setShowAdd(true)} className="btn-secondary flex items-center gap-2 text-sm">
+            <Plus className="w-4 h-4" /> Add Task
+          </button>
+        </div>
       </div>
+
+      {drafts.length > 0 && (
+        <div>
+          <h2 className="text-sm font-semibold text-slate-300 mb-3">Filing Drafts</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {drafts.map((draft, i) => {
+              const progress = getDraftProgress(draft);
+              return (
+                <motion.div
+                  key={draft.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.05 }}
+                  className="card-hover p-5 cursor-pointer group"
+                  onClick={() => navigate(`/compliance/filing/${draft.id}`)}
+                >
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-lg bg-navy-800/60 border border-navy-700/40 flex items-center justify-center">
+                        <FileText className="w-4 h-4 text-navy-300" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-white">Form {draft.form_type}</p>
+                        <p className="text-xs text-slate-500">FY {draft.fiscal_year}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className={getFilingStatusBadge(draft.status)}>
+                        {getFilingStatusLabel(draft.status)}
+                      </span>
+                      <button
+                        onClick={e => { e.stopPropagation(); deleteDraft(draft.id); }}
+                        className="p-1 text-slate-600 hover:text-accent-400 opacity-0 group-hover:opacity-100 transition-all"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="mb-2">
+                    <div className="flex items-center justify-between text-xs text-slate-500 mb-1">
+                      <span>Progress</span>
+                      <span>{progress}%</span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-navy-800/60 overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-navy-500 transition-all duration-300"
+                        style={{ width: `${progress}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-slate-500">
+                      Updated {formatDate(draft.updated_at)}
+                    </span>
+                    <span className="text-xs text-navy-400 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      {draft.status === 'draft' ? 'Continue' : 'View'} <ArrowRight className="w-3 h-3" />
+                    </span>
+                  </div>
+                </motion.div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {drafts.length === 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="card p-8 text-center"
+        >
+          <div className="w-16 h-16 rounded-2xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center mx-auto mb-4">
+            <Sparkles className="w-8 h-8 text-teal-400" />
+          </div>
+          <h3 className="text-lg font-semibold text-white mb-2">AI-Powered 990 Preparation</h3>
+          <p className="text-sm text-slate-400 max-w-md mx-auto mb-6">
+            Start a new filing to let AI help you complete your Form {formType}. It will pull data from your
+            existing records and generate intelligent suggestions for each section.
+          </p>
+          <button onClick={() => setShowNewFiling(true)} className="btn-primary inline-flex items-center gap-2 text-sm">
+            <Sparkles className="w-4 h-4" /> Start Your First Filing
+          </button>
+        </motion.div>
+      )}
 
       {activeIRS && (
         <motion.div
@@ -107,10 +250,10 @@ export default function CompliancePage() {
             <div>
               <div className="flex items-center gap-3 mb-2">
                 <div className="w-10 h-10 rounded-xl bg-navy-800/60 border border-navy-700/40 flex items-center justify-center">
-                  <FileText className="w-5 h-5 text-navy-300" />
+                  <CalendarClock className="w-5 h-5 text-navy-300" />
                 </div>
                 <div>
-                  <h3 className="text-base font-semibold text-white">Form {organization?.form_990_type ?? '990'}</h3>
+                  <h3 className="text-base font-semibold text-white">Filing Deadline</h3>
                   <p className="text-xs text-slate-500">{activeIRS.title || 'Current filing period'}</p>
                 </div>
               </div>
@@ -121,9 +264,7 @@ export default function CompliancePage() {
           <div className="flex items-center gap-3 mb-4">
             <StatusBadge status={activeIRS.status} />
             <span className="text-xs text-slate-500">
-              Form type based on {organization?.form_990_type === '990-N' ? 'gross receipts ≤ $50,000' :
-                organization?.form_990_type === '990-EZ' ? 'gross receipts < $200,000 & assets < $500,000' :
-                  'gross receipts ≥ $200,000 or assets ≥ $500,000'}
+              Form {organization?.form_990_type ?? '990'}
             </span>
           </div>
 
@@ -316,6 +457,55 @@ export default function CompliancePage() {
             </button>
           </div>
         </form>
+      </Modal>
+
+      <Modal open={showNewFiling} onClose={() => setShowNewFiling(false)} title="Start New 990 Filing">
+        <div className="space-y-5">
+          <div className="p-4 bg-navy-800/40 border border-navy-700/40 rounded-lg">
+            <div className="flex items-center gap-3 mb-2">
+              <FileText className="w-5 h-5 text-navy-300" />
+              <span className="text-sm font-semibold text-white">Form {formType}</span>
+            </div>
+            <p className="text-xs text-slate-500">
+              {formType === '990-N' ? 'e-Postcard for organizations with gross receipts <= $50,000' :
+               formType === '990-EZ' ? 'Short form for gross receipts < $200,000 and assets < $500,000' :
+               'Full form for gross receipts >= $200,000 or assets >= $500,000'}
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-2">Fiscal Year</label>
+            <input
+              type="number"
+              value={newFilingYear}
+              onChange={e => setNewFilingYear(Number(e.target.value))}
+              className="input-field font-mono"
+              min={2020}
+              max={2030}
+            />
+            <p className="text-xs text-slate-500 mt-1.5">The fiscal year this filing covers</p>
+          </div>
+
+          <div className="p-3 bg-teal-500/10 border border-teal-500/20 rounded-lg">
+            <div className="flex items-center gap-2 mb-1">
+              <Sparkles className="w-3.5 h-3.5 text-teal-400" />
+              <span className="text-xs font-medium text-teal-300">AI-Assisted Preparation</span>
+            </div>
+            <p className="text-xs text-teal-400/80">
+              The wizard will pre-populate data from your existing records and offer AI-generated suggestions
+              for each section of the form.
+            </p>
+          </div>
+
+          <div className="flex gap-3 pt-2">
+            <button onClick={handleStartFiling} className="btn-primary flex items-center gap-2 text-sm">
+              <Sparkles className="w-4 h-4" /> Begin Filing
+            </button>
+            <button onClick={() => setShowNewFiling(false)} className="btn-secondary text-sm">
+              Cancel
+            </button>
+          </div>
+        </div>
       </Modal>
     </div>
   );

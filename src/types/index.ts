@@ -105,3 +105,68 @@ export interface AuditLogEntry {
   details: Record<string, unknown>;
   created_at: string;
 }
+
+export type FilingStatus = 'draft' | 'in_review' | 'approved' | 'filed';
+export type SectionStatus = 'not_started' | 'in_progress' | 'ai_drafted' | 'reviewed';
+export type FormType = '990-N' | '990-EZ' | '990';
+
+export interface FilingDraft {
+  id: string;
+  organization_id: string;
+  fiscal_year: number;
+  form_type: FormType;
+  status: FilingStatus;
+  current_step: number;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FilingDraftSection {
+  id: string;
+  draft_id: string;
+  section_key: string;
+  data: Record<string, unknown>;
+  ai_generated: Record<string, unknown>;
+  status: SectionStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FilingSectionDef {
+  key: string;
+  label: string;
+  description: string;
+}
+
+export const FILING_SECTIONS_990N: FilingSectionDef[] = [
+  { key: 'org_info', label: 'Organization Information', description: 'Legal name, EIN, address, and principal officer' },
+];
+
+export const FILING_SECTIONS_990EZ: FilingSectionDef[] = [
+  { key: 'org_info', label: 'Organization Information', description: 'Legal name, EIN, address, and tax period' },
+  { key: 'revenue', label: 'Revenue & Expenses', description: 'Contributions, program revenue, and total expenses' },
+  { key: 'expenses', label: 'Expense Allocation', description: 'Program services, management, and fundraising' },
+  { key: 'officers', label: 'Officers & Directors', description: 'Board members, officers, and compensation' },
+  { key: 'mission', label: 'Mission & Programs', description: 'Mission statement and program accomplishments' },
+  { key: 'governance', label: 'Governance & Policies', description: 'Governance practices and required policies' },
+  { key: 'financial_statements', label: 'Balance Sheet', description: 'Assets, liabilities, and net assets' },
+];
+
+export const FILING_SECTIONS_990: FilingSectionDef[] = [
+  { key: 'org_info', label: 'Organization Information', description: 'Legal name, EIN, address, and tax period' },
+  { key: 'revenue', label: 'Statement of Revenue', description: 'Part VIII: All revenue sources and totals' },
+  { key: 'expenses', label: 'Functional Expenses', description: 'Part IX: Expenses by function and natural classification' },
+  { key: 'officers', label: 'Compensation', description: 'Part VII: Officers, directors, trustees, key employees' },
+  { key: 'mission', label: 'Program Accomplishments', description: 'Part III: Mission and program service achievements' },
+  { key: 'governance', label: 'Governance & Disclosure', description: 'Part VI: Governance, management, and disclosure' },
+  { key: 'financial_statements', label: 'Financial Statements', description: 'Parts X-XII: Balance sheet, reconciliation, and reporting' },
+];
+
+export function getFilingSections(formType: FormType): FilingSectionDef[] {
+  switch (formType) {
+    case '990-N': return FILING_SECTIONS_990N;
+    case '990-EZ': return FILING_SECTIONS_990EZ;
+    case '990': return FILING_SECTIONS_990;
+  }
+}

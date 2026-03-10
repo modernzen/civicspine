@@ -7,6 +7,7 @@ import RegisterPage from './pages/auth/RegisterPage';
 import SetupPage from './pages/auth/SetupPage';
 import DashboardPage from './pages/dashboard/DashboardPage';
 import CompliancePage from './pages/compliance/CompliancePage';
+import FilingWizardPage from './pages/compliance/FilingWizardPage';
 import StatesPage from './pages/states/StatesPage';
 import BoardPage from './pages/board/BoardPage';
 import GrantsPage from './pages/grants/GrantsPage';
@@ -46,6 +47,7 @@ function AppRoutes() {
       <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/compliance" element={<CompliancePage />} />
+        <Route path="/compliance/filing/:draftId" element={<FilingWizardPage />} />
         <Route path="/states" element={<StatesPage />} />
         <Route path="/board" element={<BoardPage />} />
         <Route path="/grants" element={<GrantsPage />} />
